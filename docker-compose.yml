@@ -10,11 +10,12 @@ services:
       - path: tools/llm-gateway/.env
         required: false   # the mock override supplies values instead
     environment:
-      LITELLM_ENABLE_MCP_STDIO: "true"
-      LITELLM_MCP_STDIO_EXTRA_COMMANDS: "dbt-mcp"
       DBT_PROJECT_DIR: /srv/checkout/dbt_dwh
       DBT_PROFILES_DIR: /opt/gateway/profiles
       DO_NOT_TRACK: "1"
+      # Postgres for the Admin UI (login, keys, spend logs). PoC credentials, see db service.
+      DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:-litellm-poc}@db:5432/litellm
+      STORE_MODEL_IN_DB: "False"
       DBT_SEND_ANONYMOUS_USAGE_STATS: "false"   # for dbt deps in the entrypoint
     # Same UID as the owner of the Project checkout, so dbt can write target/ and dbt_packages/.
     user: "${GATEWAY_UID:-1000}:${GATEWAY_GID:-1000}"
@@ -23,6 +24,9 @@ services:
     volumes:
       # The Project checkout: a dedicated read-write copy of the monorepo.
       - ${PROJECT_CHECKOUT:-.}:/srv/checkout
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
@@ -31,3 +35,21 @@ services:
       retries: 3
       start_period: 60s
 
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: litellm
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-litellm-poc}
+    volumes:
+      - gateway-db:/var/lib/postgresql/data
+    # Not published: only the Gateway reaches it on the compose network.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  gateway-db:

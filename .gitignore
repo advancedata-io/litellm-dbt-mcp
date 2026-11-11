@@ -2,3 +2,6 @@ tools/llm-gateway/.env
 .venv/
 __pycache__/
 tools/llm-gateway/profiles/.user.yml
+*service-account*.json
+gcp-sa*.json
+/.env

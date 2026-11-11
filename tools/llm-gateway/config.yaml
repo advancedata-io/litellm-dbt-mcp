@@ -1,30 +1,21 @@
 # Gateway config. See docs/adr/0001 and 0002.
 
-model_list:
-  - model_name: gpt-5.6-sol
-    litellm_params:
-      model: litellm_proxy/gpt-5.6-sol
-      api_base: os.environ/MANAGED_LITELLM_URL
-      api_key: os.environ/MANAGED_LITELLM_KEY
+# Models live in models.yaml (Managed LiteLLM). docker-compose.vertex.yml mounts
+# models.vertex.yaml over it to use Gemini on Vertex AI instead.
+include:
+  - models.yaml
 
 mcp_servers:
   dbt:
-    transport: "stdio"
-    # Basename "dbt-mcp" is allowed via LITELLM_MCP_STDIO_EXTRA_COMMANDS (docker-compose.yml).
-    command: "/opt/envs/dbt-mcp/.venv/bin/dbt-mcp"
-    args: []
-    # LiteLLM spawns a new dbt-mcp per call and each call runs `dbt parse` into target/:
-    # run them one at a time.
+    # dbt-mcp runs as one long-lived process next to LiteLLM, started by entrypoint.sh.
+    # It listens on 127.0.0.1 only, so nothing outside the container can reach it (ADR 0003).
+    transport: "http"
+    url: "http://127.0.0.1:8000/mcp"
+    # Every tool call runs `dbt parse` into target/: run them one at a time.
     max_concurrent_requests: 1
-    # The child does not inherit the container env, so everything dbt-mcp needs goes here.
-    env:
-      DBT_PROJECT_DIR: "/srv/checkout/dbt_dwh"
-      DBT_PROFILES_DIR: "/opt/gateway/profiles"
-      DBT_PATH: "/opt/envs/dbt/.venv/bin/dbt"
-      DBT_MCP_ENABLE_TOOLS: "get_lineage_dev,get_node_details_dev,list"
-      DO_NOT_TRACK: "1"
-      DBT_SEND_ANONYMOUS_USAGE_STATS: "false"   # else every parse phones home
-      DBT_VERSION_CHECK: "false"
+    # Without this, only the master key may use the server: virtual keys get a 403 and the
+    # Admin UI Playground silently drops the tool. PoC: every Caller may use the dbt tools.
+    allow_all_keys: true
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

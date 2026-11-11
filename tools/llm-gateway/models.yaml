@@ -1,0 +1,7 @@
+# Upstream models: the Managed LiteLLM (or the mock, via docker-compose.mock.yml).
+model_list:
+  - model_name: gpt-5.6-sol
+    litellm_params:
+      model: litellm_proxy/gpt-5.6-sol
+      api_base: os.environ/MANAGED_LITELLM_URL
+      api_key: os.environ/MANAGED_LITELLM_KEY

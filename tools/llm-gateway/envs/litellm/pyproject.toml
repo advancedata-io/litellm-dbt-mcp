@@ -3,7 +3,11 @@ name = "gateway-litellm"
 version = "0.1.0"
 description = "Gateway: LiteLLM proxy"
 requires-python = ">=3.12,<3.13"
-dependencies = ["litellm[proxy]==1.109.0"]
+dependencies = [
+    "google-auth==2.62.2",  # Vertex AI auth (service account), see docker-compose.vertex.yml
+    "litellm[proxy]==1.109.0",
+    "prisma==0.11.0", # DB client for the Admin UI / Postgres
+]
 
 [tool.uv]
 package = false
