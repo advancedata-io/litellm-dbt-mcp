@@ -1,0 +1,12 @@
+# Upstream models: Gemini on Vertex AI, authenticated with a GCP service account.
+# Mounted over models.yaml by docker-compose.vertex.yml; values come from its env.
+model_list:
+  - model_name: gemini
+    litellm_params:
+      model: os.environ/VERTEX_MODEL          # e.g. vertex_ai/gemini-3.5-flash-lite
+      vertex_project: os.environ/VERTEX_PROJECT
+      vertex_location: os.environ/VERTEX_LOCATION
+      vertex_credentials: /run/secrets/gcp-sa.json
+      # Gemini 3 thinks at "high" by default, ~10s before every tool step. A Caller can
+      # still send its own reasoning_effort per request.
+      reasoning_effort: low

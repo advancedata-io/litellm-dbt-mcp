@@ -3,26 +3,29 @@
 A LiteLLM **Gateway** that serves dbt **Metadata tools** to Callers and forwards model calls to the **Managed LiteLLM**.
 The design is in [docs/](docs/Local%20dbt%20MCP%20behind%20LiteLLM.html) and [docs/adr/](docs/adr/). The vocabulary is in [GLOSSARY.md](GLOSSARY.md).
 
-PoC scope: no TLS and a shared master key. ClickHouse is never contacted (ADR 0001).
+PoC scope: no TLS and a shared master key. Postgres backs the Admin UI. ClickHouse is never contacted (ADR 0001).
 
 ## Layout
 
 ```
-docker-compose.yml          Gateway service (the real setup)
+docker-compose.yml          Gateway + Postgres (the real setup)
 docker-compose.mock.yml     override: mock Managed LiteLLM + fake keys (PoC)
+docker-compose.vertex.yml   override: Gemini on Vertex AI via a GCP service account
 refresh.sh                  git pull --ff-only, then recreate the Gateway
 dbt_dwh/                    sample dbt project (stand-in for the monorepo's dbt_dwh/)
 tools/llm-gateway/
   Dockerfile                three venvs: litellm, dbt-mcp, dbt
   envs/{litellm,dbt-mcp,dbt}/  pyproject.toml + uv.lock per venv
-  config.yaml               model gpt-5.6-sol + MCP server "dbt" (stdio)
+  config.yaml               MCP server "dbt" (HTTP, 127.0.0.1:8000); includes models.yaml
+  models.yaml               model gpt-5.6-sol (Managed LiteLLM)
+  models.vertex.yaml        model gemini (Vertex AI), see docker-compose.vertex.yml
   profiles/profiles.yml     placeholder ClickHouse profile "dev"
-  entrypoint.sh             dbt deps, then litellm
+  entrypoint.sh             dbt deps, dbt-mcp (kept running), then litellm
   .env.example              secrets template for the real setup
 tests/                      mock Managed LiteLLM + smoke test
 ```
 
-Why three venvs: dbt-mcp 2.10.1 pins `mcp==1.30.0`, while litellm 1.109 needs `mcp>=2.3`. They only talk over stdio, so keeping them apart costs nothing.
+Why three venvs: dbt-mcp 2.10.1 pins `mcp==1.30.0`, while litellm 1.109 needs `mcp>=2.3`. They only talk over local HTTP, so keeping them apart costs nothing.
 
 ## Run the PoC (mock upstream)
 
@@ -41,6 +44,22 @@ docker compose up -d --build
 On the Shared host, run this from the root of the Project checkout, which is a dedicated read-write copy of the monorepo.
 Set `PROJECT_CHECKOUT` if the compose file lives somewhere else, and `GATEWAY_UID`/`GATEWAY_GID` if the checkout isn't owned by 1000:1000.
 After pulling new commits, run `./refresh.sh`. It recreates the container, and the entrypoint runs `dbt deps` again.
+
+## Run against Gemini on Vertex AI
+
+Uses a GCP service account (role `roles/aiplatform.user`) instead of the Managed LiteLLM. Callers use model `gemini`.
+
+```sh
+export GCP_SA_KEY_FILE=/path/to/service-account.json   # readable by GATEWAY_UID, never commit it
+export VERTEX_PROJECT=<gcp-project-id> VERTEX_MODEL=vertex_ai/<gemini model ID>   # VERTEX_LOCATION defaults to global
+docker compose -f docker-compose.yml -f docker-compose.vertex.yml up -d --build
+```
+
+## Admin UI
+
+Open `http://<host>:4000/ui`. Log in with username `admin` and the master key as password (`sk-poc-master` with the mock override).
+The UI stores its data in the `db` service (Postgres 16, volume `gateway-db`, not published to the host).
+Set `POSTGRES_PASSWORD` in your shell or in a root `.env` to override the PoC default `litellm-poc`.
 
 ## Calling it
 

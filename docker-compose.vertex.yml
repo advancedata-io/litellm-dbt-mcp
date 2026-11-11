@@ -1,0 +1,15 @@
+# Override: Gemini on Vertex AI instead of the Managed LiteLLM, using a GCP service account.
+#   export GCP_SA_KEY_FILE=/path/to/service-account.json   # needs roles/aiplatform.user
+#   export VERTEX_PROJECT=<gcp-project-id> VERTEX_MODEL=vertex_ai/<gemini model ID>
+#   docker compose -f docker-compose.yml -f docker-compose.vertex.yml up -d --build
+# Set these in the shell or a root .env (compose interpolation). The key file must be readable by GATEWAY_UID.
+services:
+  gateway:
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY}
+      VERTEX_PROJECT: ${VERTEX_PROJECT:?set VERTEX_PROJECT}
+      VERTEX_LOCATION: ${VERTEX_LOCATION:-global}
+      VERTEX_MODEL: ${VERTEX_MODEL:?set VERTEX_MODEL, e.g. vertex_ai/<gemini model ID>}
+    volumes:
+      - ./tools/llm-gateway/models.vertex.yaml:/opt/gateway/models.yaml:ro
+      - ${GCP_SA_KEY_FILE:?set GCP_SA_KEY_FILE}:/run/secrets/gcp-sa.json:ro
