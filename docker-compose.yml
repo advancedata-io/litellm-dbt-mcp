@@ -1,0 +1,33 @@
+# Gateway PoC. Run from the root of the Project checkout:
+#   cp tools/llm-gateway/.env.example tools/llm-gateway/.env   # fill in
+#   docker compose up -d --build                                            # real Managed LiteLLM
+#   docker compose -f docker-compose.yml -f docker-compose.mock.yml up -d --build   # PoC with mock upstream
+services:
+  gateway:
+    build: tools/llm-gateway
+    image: llm-gateway:poc
+    env_file:
+      - path: tools/llm-gateway/.env
+        required: false   # the mock override supplies values instead
+    environment:
+      LITELLM_ENABLE_MCP_STDIO: "true"
+      LITELLM_MCP_STDIO_EXTRA_COMMANDS: "dbt-mcp"
+      DBT_PROJECT_DIR: /srv/checkout/dbt_dwh
+      DBT_PROFILES_DIR: /opt/gateway/profiles
+      DO_NOT_TRACK: "1"
+      DBT_SEND_ANONYMOUS_USAGE_STATS: "false"   # for dbt deps in the entrypoint
+    # Same UID as the owner of the Project checkout, so dbt can write target/ and dbt_packages/.
+    user: "${GATEWAY_UID:-1000}:${GATEWAY_GID:-1000}"
+    ports:
+      - "4000:4000"
+    volumes:
+      # The Project checkout: a dedicated read-write copy of the monorepo.
+      - ${PROJECT_CHECKOUT:-.}:/srv/checkout
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+

@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local dbt MCP behind LiteLLM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Layout idea: design first (diagram, repo layout, config), then a review brief that a
+     separate session can read cold. One column of full-width blocks, grids inside them. */
+  :root {
+    --bg: #f3f5f7;
+    --surface: #ffffff;
+    --ink: #17212b;
+    --muted: #5b6875;
+    --line: #c3ccd5;
+    --accent: #d9480f;
+    --accent-soft: #fdebe3;
+    --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12171c;
+      --surface: #1b232b;
+      --ink: #e6ebf0;
+      --muted: #9aa7b4;
+      --line: #3a4652;
+      --accent: #ff8a5c;
+      --accent-soft: #3a2218;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12171c;
+    --surface: #1b232b;
+    --ink: #e6ebf0;
+    --muted: #9aa7b4;
+    --line: #3a4652;
+    --accent: #ff8a5c;
+    --accent-soft: #3a2218;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  main {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 32px 20px 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  header { display: flex; flex-direction: column; gap: 6px; }
+  .status {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+  h1 { font-size: 26px; font-weight: 600; margin: 0; text-wrap: balance; }
+  h2 { font-size: 16px; font-weight: 600; margin: 0 0 10px; text-wrap: balance; }
+  p { margin: 0; max-width: 68ch; }
+  .lede { color: var(--muted); }
+
+  .part {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    border-top: 2px solid var(--ink);
+    padding-top: 12px;
+    margin-top: 12px;
+  }
+  .part h2 { font-size: 19px; margin: 0; }
+  .part p { color: var(--muted); font-size: 13.5px; flex-basis: 100%; }
+
+  figure {
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 16px;
+  }
+  .scroll { overflow-x: auto; }
+  figure svg { display: block; width: 100%; min-width: 860px; height: auto; }
+  figcaption { margin-top: 12px; color: var(--muted); font-size: 13.5px; max-width: 80ch; }
+
+  svg text { font-family: var(--font-body); fill: var(--ink); }
+  .box { fill: var(--surface); stroke: var(--ink); stroke-width: 1.2; }
+  .box-sub { fill: var(--bg); stroke: var(--line); stroke-width: 1.2; }
+  .box-hot { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.6; }
+  .box-opt { fill: var(--surface); stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 5 4; }
+  .zone { fill: none; stroke: var(--line); stroke-width: 1.4; stroke-dasharray: 7 5; }
+  .wire { fill: none; stroke: var(--ink); stroke-width: 1.4; }
+  .wire-opt { fill: none; stroke: var(--muted); stroke-width: 1.4; stroke-dasharray: 5 4; }
+  .wire-hot { fill: none; stroke: var(--accent); stroke-width: 2.2; }
+  .head { fill: var(--ink); }
+  .head-opt { fill: var(--muted); }
+  .head-hot { fill: var(--accent); }
+  svg .t { font-size: 13px; font-weight: 600; }
+  svg .s { font-size: 11px; fill: var(--muted); }
+  svg .l { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+  svg .l-hot { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; fill: var(--accent); }
+  svg .z { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; fill: var(--muted); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+  section {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 18px 20px;
+    min-width: 0;
+  }
+  ul, ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+  li { max-width: 64ch; }
+  code, pre { font-family: var(--font-mono); font-size: 12.5px; }
+  code { background: var(--bg); padding: 1px 5px; border-radius: 3px; }
+  pre {
+    margin: 0;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; }
+  pre + pre, pre + p, p + pre { margin-top: 10px; }
+  .note { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  a { color: var(--accent); }
+
+  button {
+    font: 500 13px var(--font-body);
+    color: var(--surface);
+    background: var(--ink);
+    border: 0;
+    border-radius: 4px;
+    padding: 8px 14px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--accent); }
+  button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #brief-fallback {
+    display: none;
+    width: 100%;
+    height: 220px;
+    font: 12px var(--font-mono);
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 10px;
+  }
+  #brief-fallback.shown { display: block; }
+</style>
+</head>
+<body>
+<main id="doc">
+  <header>
+    <div class="status">PROPOSAL v0.4 · 11 Nov 2026 · untested · prototype next</div>
+    <h1>Local dbt MCP behind LiteLLM</h1>
+    <p class="lede">Our team runs its own LiteLLM, the Gateway, on a Shared host. It serves dbt Metadata tools (lineage, node details, list) to apps, scripts and notebooks, and forwards every model call to the Managed LiteLLM that another team runs. The Managed LiteLLM needs no changes. ClickHouse is never contacted. We build and test this in a Devcontainer that runs the same image.</p>
+  </header>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 1100 610" role="img" aria-label="Flow: Callers (apps, scripts, notebooks on other machines) send /v1/responses requests with an MCP tool to the Gateway, our LiteLLM on port 4000 of the Shared host, using the shared master key over plain HTTP. The Gateway runs the tool loop itself and forwards the model call for gpt-5.6-sol to the Managed LiteLLM (run by another team) with the key that team issued; the Managed LiteLLM routes to the LLM providers. For each tool call the Gateway's MCP part starts a new dbt-mcp process over stdio, one at a time (max_concurrent_requests 1). dbt-mcp exposes only get_lineage_dev, get_node_details_dev and list, and runs dbt-core 1.12.6 parse or ls against dbt_dwh in the Project checkout, a dedicated read-write copy of the monorepo mounted into the container. dbt uses a committed placeholder profiles.yml (profile dev), so ClickHouse is never contacted. The Devcontainer runs the same image and compose file with a small sample project.">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head" d="M0 0 L10 5 L0 10 z"/></marker>
+          <marker id="ah-opt" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="head-opt" d="M0 0 L10 5 L0 10 z"/></marker>
+          <marker id="ah-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="head-hot" d="M0 0 L10 5 L0 10 z"/></marker>
+        </defs>
+
+        <text class="z" x="20" y="72">Callers · other machines</text>
+        <text class="z" x="860" y="72">Outside our control</text>
+
+        <rect class="zone" x="340" y="50" width="420" height="540" rx="8"/>
+        <text class="z" x="356" y="72">Shared host · docker compose</text>
+
+        <rect class="box" x="20" y="120" width="180" height="76" rx="4"/>
+        <text class="t" x="34" y="148">Callers</text>
+        <text class="s" x="34" y="166">apps, scripts, notebooks</text>
+        <text class="s" x="34" y="182">OpenAI SDK</text>
+
+        <rect class="box" x="360" y="90" width="380" height="240" rx="4"/>
+        <text class="t" x="380" y="114">Gateway · LiteLLM · :4000</text>
+        <text class="s" x="720" y="114" text-anchor="end">master key · no DB</text>
+
+        <rect class="box-sub" x="380" y="128" width="340" height="56" rx="4"/>
+        <text class="t" x="394" y="152">Responses API</text>
+        <text class="s" x="394" y="169">/v1/responses · model gpt-5.6-sol</text>
+
+        <rect class="box-sub" x="380" y="258" width="340" height="56" rx="4"/>
+        <text class="t" x="394" y="282">MCP server "dbt"</text>
+        <text class="s" x="394" y="299">stdio · max_concurrent_requests: 1</text>
+
+        <rect class="box-hot" x="380" y="380" width="140" height="70" rx="4"/>
+        <text class="t" x="394" y="408">dbt-mcp</text>
+        <text class="s" x="394" y="425">new process per call</text>
+        <text class="s" x="394" y="440">3 tools enabled</text>
+
+        <rect class="box" x="600" y="380" width="140" height="70" rx="4"/>
+        <text class="t" x="614" y="408">dbt CLI</text>
+        <text class="s" x="614" y="425">dbt-core 1.12.6</text>
+        <text class="s" x="614" y="440">parse · ls only</text>
+
+        <rect class="box" x="380" y="480" width="140" height="56" rx="4"/>
+        <text class="t" x="394" y="504">profiles.yml</text>
+        <text class="s" x="394" y="521">placeholder · "dev"</text>
+
+        <rect class="box" x="600" y="480" width="140" height="56" rx="4"/>
+        <text class="t" x="614" y="504">Project checkout</text>
+        <text class="s" x="614" y="521">dbt_dwh/ · rw copy</text>
+
+        <rect class="box" x="860" y="128" width="220" height="56" rx="4"/>
+        <text class="t" x="874" y="152">Managed LiteLLM</text>
+        <text class="s" x="874" y="169">other team · shared internal URL</text>
+
+        <rect class="box" x="860" y="240" width="220" height="56" rx="4"/>
+        <text class="t" x="874" y="264">LLM providers</text>
+        <text class="s" x="874" y="281">routed by the Managed LiteLLM</text>
+
+        <rect class="box-opt" x="860" y="380" width="220" height="70" rx="4"/>
+        <text class="t" x="874" y="408">ClickHouse</text>
+        <text class="s" x="874" y="425">never contacted</text>
+        <text class="s" x="874" y="440">no credentials in the container</text>
+
+        <line class="wire" x1="200" y1="156" x2="380" y2="156" marker-end="url(#ah)"/>
+        <text class="l" x="290" y="148" text-anchor="middle">responses + mcp tool</text>
+        <text class="l" x="290" y="172" text-anchor="middle">master key · HTTP</text>
+
+        <line class="wire" x1="720" y1="156" x2="860" y2="156" marker-end="url(#ah)"/>
+        <text class="l" x="790" y="148" text-anchor="middle">function tools</text>
+        <text class="l" x="790" y="172" text-anchor="middle">their key</text>
+
+        <line class="wire" x1="970" y1="184" x2="970" y2="240" marker-end="url(#ah)"/>
+        <text class="l" x="982" y="216">routes</text>
+
+        <line class="wire" x1="450" y1="184" x2="450" y2="258" marker-end="url(#ah)"/>
+        <text class="l" x="462" y="225">tool loop runs here</text>
+
+        <line class="wire-hot" x1="450" y1="314" x2="450" y2="380" marker-end="url(#ah-hot)"/>
+        <text class="l-hot" x="462" y="361">stdio · spawns dbt-mcp, one at a time</text>
+
+        <line class="wire" x1="520" y1="415" x2="600" y2="415" marker-end="url(#ah)"/>
+        <text class="l" x="560" y="407" text-anchor="middle">runs</text>
+
+        <line class="wire" x1="670" y1="450" x2="670" y2="480" marker-end="url(#ah)"/>
+        <text class="l" x="680" y="470">reads · writes target/</text>
+
+        <line class="wire" x1="450" y1="480" x2="450" y2="450" marker-end="url(#ah)"/>
+        <text class="l" x="460" y="470">DBT_PROFILES_DIR</text>
+
+        <text class="l" x="356" y="575">Devcontainer: same image, sample dbt_dwh/</text>
+      </svg>
+    </div>
+    <figcaption>The orange hop is the core of the design. LiteLLM starts a fresh dbt-mcp process for every tool call, and every call runs <code>dbt parse</code> into the Project checkout, so calls run one at a time. ClickHouse is drawn dashed because nothing connects to it: the profile is a placeholder.</figcaption>
+  </figure>
+
+  <div class="grid">
+    <section>
+      <h2>Layout (prototype repo, ported later)</h2>
+      <pre><code>litellm-dbt-mcp/
+├─ .devcontainer/
+│  └─ devcontainer.json     compose + dev override
+├─ dbt_dwh/                 sample dbt-clickhouse project
+├─ tools/llm-gateway/
+│  ├─ Dockerfile            uv sync from uv.lock
+│  ├─ compose.yaml          gateway service
+│  ├─ compose.dev.yaml      Devcontainer override
+│  ├─ entrypoint.sh         dbt deps, then litellm
+│  ├─ refresh.sh            git pull --ff-only + up
+│  ├─ config.yaml           model + dbt MCP server
+│  ├─ profiles/profiles.yml placeholder, profile "dev"
+│  ├─ pyproject.toml, uv.lock
+│  ├─ .env.example          secrets template
+│  └─ README.md             runbook
+├─ docs/adr/                0001, 0002
+└─ GLOSSARY.md</code></pre>
+      <p class="note">Pins in <code>uv.lock</code>: <code>litellm[proxy]</code> (latest stable, v1.106.8 today), <code>dbt-mcp==2.10.1</code>, <code>dbt-core==1.12.6</code>, <code>dbt-clickhouse==1.10.3</code>. When we port this, <code>dbt_dwh/</code> is replaced by the monorepo's real project. If the monorepo already has a <code>.devcontainer/</code>, the two have to be merged.</p>
+    </section>
+
+    <section>
+      <h2>tools/llm-gateway/config.yaml</h2>
+      <pre><code>model_list:
+  - model_name: gpt-5.6-sol
+    litellm_params:
+      model: litellm_proxy/gpt-5.6-sol
+      api_base: os.environ/MANAGED_LITELLM_URL
+      api_key: os.environ/MANAGED_LITELLM_KEY
+
+mcp_servers:
+  dbt:
+    transport: "stdio"
+    command: "dbt-mcp"
+    max_concurrent_requests: 1
+    env:
+      DBT_PROJECT_DIR: /srv/checkout/dbt_dwh
+      DBT_PROFILES_DIR: /opt/gateway/profiles
+      DBT_PATH: /opt/gateway/.venv/bin/dbt
+      DBT_MCP_ENABLE_TOOLS: get_lineage_dev,get_node_details_dev,list
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY</code></pre>
+    </section>
+
+    <section>
+      <h2>Profile, env and compose</h2>
+      <pre><code># tools/llm-gateway/profiles/profiles.yml (committed)
+# Placeholder: parse and ls never connect. See ADR 0001.
+dev:
+  target: placeholder
+  outputs:
+    placeholder:
+      type: clickhouse
+      host: placeholder.invalid
+      port: 8123
+      user: none
+      password: none
+      schema: default</code></pre>
+      <pre><code># tools/llm-gateway/.env (gitignored, only secrets)
+MANAGED_LITELLM_URL=https://managed-litellm.example
+MANAGED_LITELLM_KEY=sk-...   # issued by the other team
+LITELLM_MASTER_KEY=sk-...    # shared with Callers</code></pre>
+      <pre><code># compose.yaml, gateway service (excerpt)
+environment:
+  LITELLM_ENABLE_MCP_STDIO: "true"
+  LITELLM_MCP_STDIO_EXTRA_COMMANDS: dbt-mcp
+env_file: .env
+ports: ["4000:4000"]
+volumes:
+  - ${PROJECT_CHECKOUT:-../..}:/srv/checkout   # read-write</code></pre>
+    </section>
+
+    <section>
+      <h2>Caller example and runbook</h2>
+      <pre><code>from openai import OpenAI
+client = OpenAI(base_url="http://&lt;shared-host&gt;:4000/v1",
+                api_key="&lt;master key&gt;")
+client.responses.create(
+    model="gpt-5.6-sol",
+    input="Which models feed fct_orders?",
+    tools=[{"type": "mcp", "server_label": "dbt",
+            "server_url": "litellm_proxy/mcp/dbt",
+            "require_approval": "never"}])</code></pre>
+      <pre><code># Shared host, from tools/llm-gateway in the Project checkout
+docker compose up -d --build   # first start
+./refresh.sh                   # git pull --ff-only, then up -d --build
+                               # the entrypoint re-runs dbt deps</code></pre>
+    </section>
+  </div>
+
+  <div class="part">
+    <h2>Brief for a review session</h2>
+    <button type="button" id="copy-brief">Copy whole document as Markdown</button>
+    <p id="copy-status">Everything below is written so a reader with no prior context can challenge the design. The button copies the full page, with the diagram described in words, for pasting into another session.</p>
+    <textarea id="brief-fallback" aria-label="Document as Markdown" readonly></textarea>
+  </div>
+
+  <div class="grid">
+    <section>
+      <h2>Constraints and context</h2>
+      <ul>
+        <li>The Managed LiteLLM is run by another team at a shared internal URL, and we cannot change its configuration. It has issued us one key, for <code>gpt-5.6-sol</code>.</li>
+        <li>We host dbt-mcp ourselves, not the remote dbt platform MCP server.</li>
+        <li>Callers are apps, scripts and notebooks on other machines, not IDE agents.</li>
+        <li>Callers need metadata only: models, sources, lineage, node details. They don't run dbt commands or query the warehouse.</li>
+        <li>It runs on one Shared host for the whole team. Development happens in a Devcontainer.</li>
+        <li>The dbt project is <code>dbt_dwh/</code> in the monorepo, on ClickHouse, with dbt-core 1.12.6 and profile <code>dev</code>.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>What the design decides</h2>
+      <ol>
+        <li>Our own LiteLLM, the Gateway, runs on the Shared host through docker compose. The Devcontainer uses the same compose file with a dev override (ADR 0002).</li>
+        <li>The Gateway forwards <code>gpt-5.6-sol</code> to the Managed LiteLLM through <code>litellm_proxy/</code>, using an explicit model list rather than a wildcard.</li>
+        <li>Callers use <code>/v1/responses</code> with an MCP tool and <code>require_approval: "never"</code>. The Gateway runs the tool loop itself.</li>
+        <li>dbt-mcp is pre-installed and pinned, and runs over stdio with <code>max_concurrent_requests: 1</code>.</li>
+        <li>Only <code>get_lineage_dev</code>, <code>get_node_details_dev</code> and <code>list</code> are enabled. ClickHouse gets a placeholder profile and no credentials (ADR 0001).</li>
+        <li>The Project checkout is a dedicated read-write copy of the monorepo on the Shared host. It is updated by a manual pull and <code>refresh.sh</code>. The entrypoint runs <code>dbt deps</code> on every start.</li>
+        <li>Callers share the master key. There is no database, no TLS, and support is best effort from our team.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Checked against source and docs</h2>
+      <ul>
+        <li>LiteLLM starts a new stdio process for every <code>list_tools</code> and <code>call_tool</code> (<code>MCPClient.run_with_session</code>). Persistent upstream sessions skip stdio. Calls run in parallel unless <code>max_concurrent_requests</code> is set.</li>
+        <li>stdio needs <code>LITELLM_ENABLE_MCP_STDIO=true</code> in the real process environment. Setting it in config.yaml has no effect. The command basename must be on the allowlist (<code>npx, uvx, python, python3, node, docker, deno</code>) or added through <code>LITELLM_MCP_STDIO_EXTRA_COMMANDS</code>.</li>
+        <li><code>/v1/responses</code> with <code>server_url: "litellm_proxy/…"</code> turns MCP tools into function tools before it dispatches to the provider, and runs them automatically only when <code>require_approval: "never"</code> is set. This was confirmed by reading the code, not by docs.</li>
+        <li>dbt-mcp v2.10.1: <code>DBT_MCP_ENABLE_TOOLS</code> switches off every tool not listed. <code>get_lineage_dev</code> runs <code>dbt parse</code> on every call and reads <code>&lt;project&gt;/target/manifest.json</code>, ignoring <code>DBT_TARGET_PATH</code> (issue #950). <code>get_node_details_dev</code> runs <code>dbt list</code>. Its lock works only within one process.</li>
+        <li>dbt-mcp's console script is <code>dbt-mcp</code>. There is no <code>__main__</code>, so <code>python -m dbt_mcp</code> does not work.</li>
+        <li>dbt-clickhouse main declares <code>dbt-core&gt;=1.9,&lt;2.0</code> and is tested against <code>1.12.*</code>.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Assumed, not tested</h2>
+      <ul>
+        <li>Nothing has been run yet.</li>
+        <li><code>dbt parse</code> and <code>dbt ls</code> with dbt-clickhouse never open a connection, so the placeholder profile is enough.</li>
+        <li>The time per call is acceptable: process start, the <code>dbt --help</code> probe, then a partial parse.</li>
+        <li>With only three CLI tools enabled, dbt-mcp starts without the dbt platform variables (<code>DBT_HOST</code>, <code>DBT_TOKEN</code>).</li>
+        <li>The responses tool loop works when the model goes through <code>litellm_proxy/</code>, and the Managed LiteLLM passes function tools and streaming through unchanged.</li>
+        <li>The <code>env</code> map on a stdio server reaches dbt-mcp alongside PATH and HOME.</li>
+        <li>The Shared host can reach hub.getdbt.com (or git) for <code>dbt deps</code> at start.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Alternatives considered</h2>
+      <ul>
+        <li>No Gateway, with IDE agents starting dbt-mcp themselves: rejected, because the Callers are programs.</li>
+        <li>dbt platform Discovery API: rejected. It needs dbt platform jobs and a token, and the metadata would come from outside our host.</li>
+        <li>dbt-mcp as its own HTTP service: rejected. It is documented for debugging only, has no authentication, and would be another service to run.</li>
+        <li>Ask the Managed LiteLLM team to host dbt-mcp: rejected. It depends on their roadmap, and they would need our project on their host.</li>
+        <li>A Devcontainer per developer: rejected in favour of one Shared host.</li>
+        <li>A read-only mount plus a copy at start: rejected. The mounted Project checkout is already a dedicated copy.</li>
+        <li><code>uvx dbt-mcp</code>: rejected, because it resolves the package on every spawn.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Weak spots to attack</h2>
+      <ol>
+        <li>The master key is LiteLLM's admin credential, it is shared with every Caller, and it crosses the network in plain text.</li>
+        <li>Calls run one at a time and each one starts a process and parses the project. Bursts from several Callers queue up.</li>
+        <li>The Managed LiteLLM sees one key for everything, and the Gateway has no per-Caller attribution either.</li>
+        <li>Manual pulls mean the metadata can go stale without anyone noticing.</li>
+        <li>If <code>dbt deps</code> fails at start (no network, or the hub is down), the Gateway does not come up.</li>
+        <li>The placeholder profile breaks if <code>profile:</code> in <code>dbt_dwh/dbt_project.yml</code> is renamed.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Open questions</h2>
+      <ol>
+        <li>Does the monorepo already have a <code>.devcontainer/</code> that this one must merge into?</li>
+        <li>When, if ever, do we add TLS and per-Caller keys? Both need a reverse proxy and a database.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Sources</h2>
+      <ul>
+        <li><a href="https://docs.litellm.ai/docs/mcp_config_reference">LiteLLM MCP configuration reference</a></li>
+        <li><a href="https://docs.litellm.ai/docs/mcp">LiteLLM MCP overview</a></li>
+        <li><a href="https://docs.litellm.ai/blog/mcp-stdio-command-injection-april-2026">LiteLLM stdio command allowlist</a></li>
+        <li><a href="https://docs.litellm.ai/docs/providers/litellm_proxy">LiteLLM proxy as a provider</a></li>
+        <li><a href="https://github.com/BerriAI/litellm">LiteLLM source (mcp_client/client.py, mcp_server_manager.py)</a></li>
+        <li><a href="https://github.com/dbt-labs/dbt-mcp">dbt-mcp source (dbt_cli/tools.py, config/settings.py)</a></li>
+        <li><a href="https://github.com/dbt-labs/dbt-mcp/issues/950">dbt-mcp issue #950: manifest path ignores DBT_TARGET_PATH</a></li>
+        <li><a href="https://docs.getdbt.com/docs/dbt-ai/setup-local-mcp">dbt: set up self-hosted MCP</a></li>
+        <li><a href="https://docs.getdbt.com/docs/dbt-ai/mcp-environment-variables">dbt: MCP environment variables</a></li>
+        <li><a href="https://github.com/ClickHouse/dbt-clickhouse">dbt-clickhouse source</a></li>
+      </ul>
+    </section>
+  </div>
+</main>
+
+<script>
+(function () {
+  function inline(el) {
+    var c = el.cloneNode(true);
+    c.querySelectorAll('a').forEach(function (a) {
+      a.replaceWith('[' + a.textContent + '](' + a.getAttribute('href') + ')');
+    });
+    c.querySelectorAll('code').forEach(function (k) {
+      k.replaceWith('`' + k.textContent + '`');
+    });
+    return c.textContent.replace(/\s+/g, ' ').trim();
+  }
+  function toMarkdown() {
+    var out = [];
+    var nodes = document.querySelectorAll('#doc .status, #doc h1, #doc h2, #doc p, #doc li, #doc pre, #doc svg[aria-label], #doc figcaption');
+    nodes.forEach(function (n) {
+      var tag = n.tagName.toLowerCase();
+      if (n.id === 'copy-status') return;
+      if (tag === 'h1') out.push('# ' + inline(n), '');
+      else if (tag === 'h2') out.push('', '## ' + inline(n), '');
+      else if (tag === 'pre') out.push('```', n.textContent.replace(/\s+$/, ''), '```', '');
+      else if (tag === 'li') out.push((n.parentElement.tagName === 'OL' ? '1. ' : '- ') + inline(n));
+      else if (tag === 'svg') out.push('', '## Architecture', '', n.getAttribute('aria-label'), '');
+      else out.push(inline(n), '');
+    });
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+  }
+  var btn = document.getElementById('copy-brief');
+  var status = document.getElementById('copy-status');
+  var box = document.getElementById('brief-fallback');
+  btn.addEventListener('click', function () {
+    var text = toMarkdown();
+    function fallback() {
+      box.value = text;
+      box.classList.add('shown');
+      box.focus();
+      box.select();
+      status.textContent = 'Copying was blocked here. The Markdown is in the box below: select all and copy it.';
+    }
+    try {
+      navigator.clipboard.writeText(text).then(function () {
+        status.textContent = 'Copied. Paste it into the other session as the starting context.';
+      }, fallback);
+    } catch (e) { fallback(); }
+  });
+})();
+</script>
+</body>
+</html>

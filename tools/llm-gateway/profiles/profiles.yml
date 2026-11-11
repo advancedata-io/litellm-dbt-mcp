@@ -1,0 +1,18 @@
+# Placeholder dbt profile for the Gateway. NOT real credentials.
+#
+# The Gateway only exposes Metadata tools (get_lineage_dev, get_node_details_dev,
+# list), which run `dbt parse` / `dbt list` and never contact the warehouse.
+# dbt still requires a syntactically valid profile, so this one points at a
+# host that can never resolve. See docs/adr/0001-metadata-tools-only-placeholder-profile.md.
+#
+# The profile name must match `profile:` in dbt_dwh/dbt_project.yml.
+dev:
+  target: placeholder
+  outputs:
+    placeholder:
+      type: clickhouse
+      host: placeholder.invalid
+      port: 8123
+      user: placeholder
+      password: placeholder
+      schema: default

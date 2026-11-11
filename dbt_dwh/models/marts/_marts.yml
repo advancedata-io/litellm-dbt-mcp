@@ -1,0 +1,55 @@
+version: 2
+
+models:
+  - name: fct_orders
+    description: >
+      Order facts with payment amounts pivoted per payment method.
+      One row per order. Owned by finance.
+    columns:
+      - name: order_key
+        description: Surrogate key over order_id and customer_id.
+        data_tests:
+          - unique
+          - not_null
+      - name: order_id
+        description: Natural key of the order.
+        data_tests:
+          - unique
+          - not_null
+      - name: customer_id
+        description: Customer who placed the order.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
+      - name: order_date
+        description: Date the order was placed.
+      - name: status
+        description: Order status.
+      - name: amount
+        description: Total paid for the order in euros, across all payment methods.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: true
+
+  - name: dim_customers
+    description: Customers with their order history aggregates. One row per customer.
+    columns:
+      - name: customer_id
+        description: Primary key of the customer.
+        data_tests:
+          - unique
+          - not_null
+      - name: full_name
+        description: Customer full name.
+      - name: first_order_date
+        description: Date of the customer's first order.
+      - name: most_recent_order_date
+        description: Date of the customer's most recent order.
+      - name: number_of_orders
+        description: Number of orders the customer has placed.
+      - name: lifetime_value
+        description: Total amount the customer has paid in euros.

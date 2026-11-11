@@ -1,0 +1,25 @@
+# Sample dbt project for the Gateway PoC: a small stand-in for the real
+# monorepo project. The Gateway only parses/lists it (see docs/adr/0001-*.md);
+# it is never run against ClickHouse.
+name: dbt_dwh
+version: "1.0.0"
+config-version: 2
+
+# Must match the placeholder profile in tools/llm-gateway/profiles/profiles.yml.
+profile: dev
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  dbt_dwh:
+    staging:
+      +materialized: view
+      +tags: ["staging"]
+    marts:
+      +materialized: table
+      +engine: "MergeTree()"
+      +tags: ["marts"]

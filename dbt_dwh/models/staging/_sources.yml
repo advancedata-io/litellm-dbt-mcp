@@ -1,0 +1,38 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Raw data landed by the ingestion pipelines, one table per source entity.
+    schema: raw
+    tables:
+      - name: orders
+        description: One row per order placed in the webshop.
+        columns:
+          - name: id
+            description: Primary key of the order.
+          - name: customer_id
+            description: Foreign key to raw.customers.
+          - name: order_date
+            description: Date the order was placed.
+          - name: status
+            description: Order status (placed, shipped, completed, returned).
+      - name: customers
+        description: One row per registered webshop customer.
+        columns:
+          - name: id
+            description: Primary key of the customer.
+          - name: first_name
+            description: Customer first name.
+          - name: last_name
+            description: Customer last name.
+      - name: payments
+        description: One row per payment attempt against an order. Amounts are in cents.
+        columns:
+          - name: id
+            description: Primary key of the payment.
+          - name: order_id
+            description: Foreign key to raw.orders.
+          - name: payment_method
+            description: Payment method (credit_card, ideal, bank_transfer, gift_card).
+          - name: amount
+            description: Payment amount in cents.

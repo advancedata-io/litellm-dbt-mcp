@@ -1,0 +1,12 @@
+[project]
+name = "gateway-dbt"
+version = "0.1.0"
+description = "dbt-core + dbt-clickhouse environment used by dbt-mcp in the Gateway"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "dbt-core==1.12.6",
+    "dbt-clickhouse==1.10.3",
+]
+
+[tool.uv]
+package = false

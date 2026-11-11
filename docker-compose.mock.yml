@@ -1,0 +1,15 @@
+# PoC override: replace the Managed LiteLLM with a local mock. No secrets here; all values are fake.
+#   docker compose -f docker-compose.yml -f docker-compose.mock.yml up -d --build
+services:
+  gateway:
+    environment:
+      MANAGED_LITELLM_URL: http://mock-managed:8080
+      MANAGED_LITELLM_KEY: sk-mock
+      LITELLM_MASTER_KEY: sk-poc-master
+    depends_on:
+      - mock-managed
+
+  mock-managed:
+    build: tests/mock_managed
+    environment:
+      MOCK_KEY: sk-mock

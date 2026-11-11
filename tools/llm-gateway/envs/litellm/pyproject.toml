@@ -1,0 +1,9 @@
+[project]
+name = "gateway-litellm"
+version = "0.1.0"
+description = "Gateway: LiteLLM proxy"
+requires-python = ">=3.12,<3.13"
+dependencies = ["litellm[proxy]==1.109.0"]
+
+[tool.uv]
+package = false

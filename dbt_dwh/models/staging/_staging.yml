@@ -1,0 +1,52 @@
+version: 2
+
+models:
+  - name: stg_orders
+    description: Orders, renamed and typed. One row per order.
+    columns:
+      - name: order_id
+        description: Primary key of the order.
+        data_tests:
+          - unique
+          - not_null
+      - name: customer_id
+        description: Customer who placed the order.
+        data_tests:
+          - not_null
+      - name: order_date
+        description: Date the order was placed.
+      - name: status
+        description: Lower-cased order status.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["placed", "shipped", "completed", "returned"]
+
+  - name: stg_customers
+    description: Customers, renamed. One row per customer.
+    columns:
+      - name: customer_id
+        description: Primary key of the customer.
+        data_tests:
+          - unique
+          - not_null
+      - name: full_name
+        description: First and last name joined with a space.
+
+  - name: stg_payments
+    description: Payments with amounts converted from cents to euros. One row per payment.
+    columns:
+      - name: payment_id
+        description: Primary key of the payment.
+        data_tests:
+          - unique
+          - not_null
+      - name: order_id
+        description: Order the payment belongs to.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('stg_orders')
+                field: order_id
+      - name: amount
+        description: Payment amount in euros.

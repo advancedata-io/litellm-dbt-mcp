@@ -1,0 +1,4 @@
+tools/llm-gateway/.env
+.venv/
+__pycache__/
+tools/llm-gateway/profiles/.user.yml
